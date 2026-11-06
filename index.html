@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0b0f14">
+  <title>Learning Checklist</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230b0f14'/%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5' fill='none' stroke='%235eead4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <div>
+        <h1>Learning Checklist</h1>
+        <p class="subtitle">DSA &middot; SQL &middot; Backend &middot; Frontend</p>
+      </div>
+      <div class="io-actions">
+        <button type="button" class="btn" id="exportBtn">Export JSON</button>
+        <button type="button" class="btn" id="importBtn">Import JSON</button>
+        <input type="file" id="importFile" accept=".json,application/json" hidden>
+      </div>
+    </header>
+
+    <nav aria-label="Subject navigation">
+      <div class="tabs" role="tablist" aria-label="Subjects">
+        <button type="button" class="tab" id="tab-dsa" role="tab" aria-selected="true"
+          aria-controls="panel-dsa" tabindex="0" data-subject="dsa">DSA</button>
+        <button type="button" class="tab" id="tab-sql" role="tab" aria-selected="false"
+          aria-controls="panel-sql" tabindex="-1" data-subject="sql">SQL</button>
+        <button type="button" class="tab" id="tab-backend" role="tab" aria-selected="false"
+          aria-controls="panel-backend" tabindex="-1" data-subject="backend">Backend</button>
+        <button type="button" class="tab" id="tab-frontend" role="tab" aria-selected="false"
+          aria-controls="panel-frontend" tabindex="-1" data-subject="frontend">Frontend</button>
+      </div>
+    </nav>
+
+    <main id="panels"></main>
+
+    <footer class="app-footer">
+      <p>Progress is saved automatically in this browser.</p>
+      <p class="storage-notice" id="storageNotice" role="alert" hidden></p>
+    </footer>
+  </div>
+
+  <noscript>
+    <p class="noscript">This checklist needs JavaScript enabled to track your progress.</p>
+  </noscript>
+
+  <script src="syllabus.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
