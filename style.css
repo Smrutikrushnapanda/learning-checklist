@@ -511,6 +511,94 @@ h1 {
   outline-offset: 0;
 }
 
+.topic-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+}
+
+.topic-link-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--faint);
+  font-family: inherit;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.topic-link-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.topic-link-open {
+  color: var(--accent);
+}
+
+.topic-link-open:hover {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.topic-link-yt {
+  color: #ef4444;
+}
+
+.topic-link-yt:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.topic-link-btn:focus-visible {
+  outline-offset: 0;
+}
+
+.topic.has-link-editor {
+  flex-wrap: wrap;
+}
+
+.link-editor {
+  display: flex;
+  flex: 0 0 100%;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 0 9px;
+}
+
+.link-input {
+  flex: 1 1 240px;
+  height: 34px;
+  font-size: 0.82rem;
+}
+
+.link-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.link-editor-actions .btn {
+  min-height: 34px;
+}
+
+.link-error {
+  flex: 0 0 100%;
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.75rem;
+}
+
 .empty-state {
   margin: 0;
   padding: 26px 16px;

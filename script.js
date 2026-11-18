@@ -6,12 +6,25 @@
   const DEFAULT_SUBJECT = "dsa";
   const MAX_TITLE_LENGTH = 120;
   const MAX_CUSTOM_TOPICS = 500;
+  const MAX_URL_LENGTH = 2000;
+  const MAX_LINKS_PER_SUBJECT = 2000;
   const MAX_IMPORT_FILE_SIZE = 2 * 1024 * 1024;
   const BUILTIN_PREFIX = "b:";
   const CUSTOM_PREFIX = "c:";
 
+  const LINK_ICON =
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>';
+  const EDIT_ICON =
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>';
+  const PLUS_ICON =
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>';
+  const YT_ICON =
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>';
+
   const builtinSections = {};
   const builtinKeys = {};
+  const builtinLinks = {};
+  const builtinHindiLinks = {};
   const panels = new Map();
   const searchQueries = { dsa: "", sql: "", backend: "", frontend: "" };
   const messageTimers = new WeakMap();
@@ -39,6 +52,61 @@
       .replace(/^-+|-+$/g, "");
   }
 
+  function normalizeUrl(value) {
+    if (typeof value !== "string") return "";
+
+    const raw = value.trim();
+    if (!raw || raw.length > MAX_URL_LENGTH) return "";
+
+    const candidate = /^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : `https://${raw}`;
+
+    try {
+      const url = new URL(candidate);
+      if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+      if (!url.hostname) return "";
+      return url.href.length <= MAX_URL_LENGTH ? url.href : "";
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function sanitizeLinks(value) {
+    const result = {};
+
+    if (!isPlainObject(value)) return result;
+
+    let count = 0;
+    for (const [key, rawUrl] of Object.entries(value)) {
+      if (count >= MAX_LINKS_PER_SUBJECT) break;
+      if (typeof key !== "string" || key.length === 0 || key.length > 200) continue;
+
+      // An empty override keeps a removed default link hidden after reload.
+      if (rawUrl === "") {
+        result[key] = "";
+        count += 1;
+        continue;
+      }
+
+      const url = normalizeUrl(rawUrl);
+      if (!url) continue;
+
+      result[key] = url;
+      count += 1;
+    }
+
+    return result;
+  }
+
+  function getTopicLink(subject, key) {
+    return Object.prototype.hasOwnProperty.call(state.links[subject], key)
+      ? state.links[subject][key]
+      : builtinLinks[subject][key] || "";
+  }
+
+  function getTopicHindiLink(subject, key) {
+    return builtinHindiLinks[subject]?.[key] || "";
+  }
+
   function makeCustomKey() {
     let id = "";
     try {
@@ -58,11 +126,13 @@
     const completed = {};
     const custom = {};
     const collapsed = {};
+    const links = {};
 
     for (const subject of SUBJECT_IDS) {
       completed[subject] = [];
       custom[subject] = [];
       collapsed[subject] = {};
+      links[subject] = {};
     }
 
     return {
@@ -70,7 +140,8 @@
       activeSubject: DEFAULT_SUBJECT,
       completed,
       custom,
-      collapsed
+      collapsed,
+      links
     };
   }
 
@@ -147,11 +218,14 @@
 
       builtinSections[subject] = [];
       builtinKeys[subject] = new Set();
+      builtinLinks[subject] = {};
+      builtinHindiLinks[subject] = {};
 
       for (const section of subjectData.sections) {
         const usedSlugs = new Set();
 
-        const topics = section.topics.map((title) => {
+        const topics = section.topics.map((entry) => {
+          const title = typeof entry === "string" ? entry : entry.title;
           const baseSlug = slugify(title) || "topic";
           let slug = baseSlug;
           let suffix = 2;
@@ -164,6 +238,8 @@
 
           const key = `${BUILTIN_PREFIX}${section.id}:${slug}`;
           builtinKeys[subject].add(key);
+          builtinLinks[subject][key] = normalizeUrl(entry.url);
+          builtinHindiLinks[subject][key] = normalizeUrl(entry.hindiUrl);
           return { key, title };
         });
 
@@ -247,6 +323,20 @@
             sectionId.length <= 200
           ) {
             next.collapsed[subject][sectionId] = true;
+          }
+        }
+      }
+
+      if (isPlainObject(saved.links) && isPlainObject(saved.links[subject])) {
+        const validKeys = new Set(builtinKeys[subject]);
+        for (const topic of next.custom[subject]) {
+          validKeys.add(topic.id);
+        }
+
+        const savedLinks = sanitizeLinks(saved.links[subject]);
+        for (const [key, url] of Object.entries(savedLinks)) {
+          if (validKeys.has(key)) {
+            next.links[subject][key] = url;
           }
         }
       }
@@ -392,6 +482,21 @@
       handleSectionsClick(subject, event);
     });
 
+    sectionsHost.addEventListener("submit", (event) => {
+      handleLinkEditorSubmit(subject, event);
+    });
+
+    sectionsHost.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      if (!(event.target instanceof Element)) return;
+
+      const form = event.target.closest("[data-link-editor]");
+      if (!form) return;
+
+      event.preventDefault();
+      closeLinkEditor(form);
+    });
+
     panels.set(subject, panel);
     document.getElementById("panels").appendChild(panel);
   }
@@ -480,6 +585,57 @@
 
       label.append(checkbox, text);
       item.appendChild(label);
+
+      const linkUrl = getTopicLink(subject, topic.key);
+      item.classList.toggle("has-link", Boolean(linkUrl));
+
+      const actions = document.createElement("div");
+      actions.className = "topic-actions";
+
+      const hindiUrl = getTopicHindiLink(subject, topic.key);
+      if (hindiUrl) {
+        const hindiLink = document.createElement("a");
+        hindiLink.className = "topic-link-btn topic-link-yt";
+        hindiLink.href = hindiUrl;
+        hindiLink.target = "_blank";
+        hindiLink.rel = "noopener noreferrer";
+        hindiLink.title = `YouTube (Hindi): ${hindiUrl}`;
+        hindiLink.setAttribute(
+          "aria-label",
+          `Watch Hindi tutorial for ${topic.title}`
+        );
+        hindiLink.innerHTML = YT_ICON;
+        actions.appendChild(hindiLink);
+      }
+
+      if (linkUrl) {
+        const openLink = document.createElement("a");
+        openLink.className = "topic-link-btn topic-link-open";
+        openLink.href = linkUrl;
+        openLink.target = "_blank";
+        openLink.rel = "noopener noreferrer";
+        openLink.title = linkUrl;
+        openLink.setAttribute(
+          "aria-label",
+          `Open resource link for ${topic.title}`
+        );
+        openLink.innerHTML = LINK_ICON;
+        actions.appendChild(openLink);
+      }
+
+      const linkButton = document.createElement("button");
+      linkButton.type = "button";
+      linkButton.className = "topic-link-btn";
+      linkButton.dataset.linkEdit = topic.key;
+      linkButton.innerHTML = linkUrl ? EDIT_ICON : PLUS_ICON;
+      linkButton.title = linkUrl ? "Edit resource link" : "Add resource link";
+      linkButton.setAttribute(
+        "aria-label",
+        `${linkUrl ? "Edit" : "Add"} resource link for ${topic.title}`
+      );
+      actions.appendChild(linkButton);
+
+      item.appendChild(actions);
 
       if (section.custom) {
         const deleteButton = document.createElement("button");
@@ -610,7 +766,16 @@
       sectionElement.querySelectorAll(".topic").forEach((topicElement) => {
         const textElement = topicElement.querySelector(".topic-text");
         const topicText = textElement ? textElement.textContent.toLowerCase() : "";
-        const matches = !query || titleMatches || topicText.includes(query);
+        const linkElement = topicElement.querySelector(".topic-link-open");
+        const linkText = linkElement ? linkElement.href.toLowerCase() : "";
+        const ytElement = topicElement.querySelector(".topic-link-yt");
+        const ytText = ytElement ? ytElement.href.toLowerCase() : "";
+        const matches =
+          !query ||
+          titleMatches ||
+          topicText.includes(query) ||
+          linkText.includes(query) ||
+          ytText.includes(query);
 
         topicElement.hidden = !matches;
         if (matches) visibleInSection += 1;
@@ -682,6 +847,26 @@
       return;
     }
 
+    const editButton = event.target.closest("button[data-link-edit]");
+    if (editButton) {
+      openLinkEditor(subject, editButton.dataset.linkEdit);
+      return;
+    }
+
+    const removeButton = event.target.closest("button[data-link-remove]");
+    if (removeButton) {
+      const form = removeButton.closest("[data-link-editor]");
+      if (form) removeTopicLink(subject, form.dataset.topicKey);
+      return;
+    }
+
+    const cancelButton = event.target.closest("button[data-link-cancel]");
+    if (cancelButton) {
+      const form = cancelButton.closest("[data-link-editor]");
+      if (form) closeLinkEditor(form);
+      return;
+    }
+
     const header = event.target.closest(".section-header");
     if (!header) return;
 
@@ -701,6 +886,166 @@
     }
 
     saveState();
+  }
+
+  function findTopicElement(subject, key) {
+    const panel = panels.get(subject);
+    if (!panel) return null;
+
+    if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+      return panel.querySelector(`.topic[data-key="${CSS.escape(key)}"]`);
+    }
+
+    return (
+      Array.from(panel.querySelectorAll(".topic")).find(
+        (element) => element.dataset.key === key
+      ) || null
+    );
+  }
+
+  function focusLinkButton(subject, key) {
+    const item = findTopicElement(subject, key);
+    if (!item) return;
+
+    const button = item.querySelector("[data-link-edit]");
+    if (button) button.focus({ preventScroll: true });
+  }
+
+  function openLinkEditor(subject, key) {
+    if (!key) return;
+
+    const panel = panels.get(subject);
+    const item = findTopicElement(subject, key);
+    if (!panel || !item) return;
+
+    panel.querySelectorAll("[data-link-editor]").forEach((editor) => {
+      const owner = editor.closest(".topic");
+      editor.remove();
+      if (owner) owner.classList.remove("has-link-editor");
+    });
+
+    const titleElement = item.querySelector(".topic-text");
+    const title = titleElement ? titleElement.textContent : "";
+    const currentUrl = getTopicLink(subject, key);
+
+    const form = document.createElement("form");
+    form.className = "link-editor";
+    form.noValidate = true;
+    form.dataset.linkEditor = "";
+    form.dataset.topicKey = key;
+
+    const input = document.createElement("input");
+    input.type = "url";
+    input.className = "text-input link-input";
+    input.dataset.linkInput = "";
+    input.placeholder = "https://example.com/resource";
+    input.maxLength = MAX_URL_LENGTH;
+    input.value = currentUrl;
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.setAttribute("aria-label", `Resource URL for ${title}`);
+
+    const error = document.createElement("p");
+    error.className = "link-error";
+    error.setAttribute("role", "alert");
+    error.hidden = true;
+
+    const buttons = document.createElement("div");
+    buttons.className = "link-editor-actions";
+
+    const saveButton = document.createElement("button");
+    saveButton.type = "submit";
+    saveButton.className = "btn btn-primary";
+    saveButton.textContent = "Save";
+
+    const cancelButton = document.createElement("button");
+    cancelButton.type = "button";
+    cancelButton.className = "btn";
+    cancelButton.dataset.linkCancel = "";
+    cancelButton.textContent = "Cancel";
+
+    buttons.append(saveButton, cancelButton);
+
+    if (currentUrl) {
+      const openLink = document.createElement("a");
+      openLink.className = "btn";
+      openLink.href = currentUrl;
+      openLink.target = "_blank";
+      openLink.rel = "noopener noreferrer";
+      openLink.textContent = "Open";
+
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.className = "btn btn-danger";
+      removeButton.dataset.linkRemove = "";
+      removeButton.textContent = "Remove";
+
+      buttons.append(openLink, removeButton);
+    }
+
+    form.append(input, buttons, error);
+    item.classList.add("has-link-editor");
+    item.appendChild(form);
+
+    input.focus();
+    input.select();
+  }
+
+  function closeLinkEditor(form) {
+    const item = form.closest(".topic");
+
+    form.remove();
+
+    if (!item) return;
+    item.classList.remove("has-link-editor");
+
+    const trigger = item.querySelector("[data-link-edit]");
+    if (trigger) trigger.focus({ preventScroll: true });
+  }
+
+  function handleLinkEditorSubmit(subject, event) {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    if (!form.matches("[data-link-editor]")) return;
+
+    event.preventDefault();
+
+    const key = form.dataset.topicKey;
+    const input = form.querySelector("[data-link-input]");
+    const error = form.querySelector(".link-error");
+    if (!key || !input || !error) return;
+
+    const raw = input.value.trim();
+    const url = normalizeUrl(raw);
+
+    if (!url) {
+      error.textContent = raw
+        ? "Enter a valid http:// or https:// URL."
+        : "Enter a URL first.";
+      error.hidden = false;
+      input.focus();
+      return;
+    }
+
+    state.links[subject][key] = url;
+    saveState();
+    renderSections(subject);
+    showMessage(subject, "Resource link saved.");
+    focusLinkButton(subject, key);
+  }
+
+  function removeTopicLink(subject, key) {
+    if (!key || !getTopicLink(subject, key)) return;
+
+    if (builtinLinks[subject][key]) {
+      state.links[subject][key] = "";
+    } else {
+      delete state.links[subject][key];
+    }
+    saveState();
+    renderSections(subject);
+    showMessage(subject, "Resource link removed.");
+    focusLinkButton(subject, key);
   }
 
   function addCustomTopic(subject) {
@@ -768,6 +1113,7 @@
     state.completed[subject] = state.completed[subject].filter(
       (completedKey) => completedKey !== key
     );
+    delete state.links[subject][key];
 
     saveState();
     renderSections(subject);
@@ -913,12 +1259,21 @@
         )
       );
 
+      const links = {};
+      for (const key of currentKeys) {
+        const url = getTopicLink(subject, key);
+        if (url || Object.prototype.hasOwnProperty.call(state.links[subject], key)) {
+          links[key] = url;
+        }
+      }
+
       subjects[subject] = {
         completed: state.completed[subject].filter((key) => currentKeys.has(key)),
         custom: state.custom[subject].map((topic) => ({
           id: topic.id,
           title: topic.title
-        }))
+        })),
+        links
       };
     }
 
@@ -965,6 +1320,7 @@
 
     const completed = {};
     const custom = {};
+    const links = {};
 
     for (const subject of SUBJECT_IDS) {
       const subjectData = isPlainObject(source[subject]) ? source[subject] : {};
@@ -976,12 +1332,18 @@
         validKeys.add(topic.id);
       }
 
+      links[subject] = {};
+      const importedLinks = sanitizeLinks(subjectData.links);
+      for (const [key, url] of Object.entries(importedLinks)) {
+        if (validKeys.has(key)) links[subject][key] = url;
+      }
+
       completed[subject] = sanitizeKeys(subjectData.completed).filter((key) =>
         validKeys.has(key)
       );
     }
 
-    return { completed, custom };
+    return { completed, custom, links };
   }
 
   async function importProgressFile(file) {
@@ -1019,6 +1381,7 @@
 
       state.completed = imported.completed;
       state.custom = imported.custom;
+      state.links = imported.links;
       saveState();
 
       for (const subject of SUBJECT_IDS) {
